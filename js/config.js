@@ -1,5 +1,5 @@
 // 게임 밸런스 수치는 전부 여기서 조정한다.
-// ※ GAME_DURATION을 바꾸면 supabase/schema.sql 의 end_game 함수의 600초도 같이 바꿀 것.
+// ※ GAME_DURATION을 바꾸면 supabase/schema.sql 의 time_up 함수의 595초도 같이 바꿀 것.
 
 export const TILE = 32;
 

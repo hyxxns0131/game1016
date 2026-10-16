@@ -16,6 +16,7 @@
   <div id="fx-red" class="fx"></div>
   <div id="fx-vignette" class="fx"></div>
   <div id="fx-grain" class="fx"></div>
+  <button id="btn-bgm" class="btn btn-small bgm-toggle" title="배경음악 켜기/끄기">🎵 BGM</button>
 
   <!-- 로비 -->
   <section id="screen-lobby" class="screen">
@@ -32,7 +33,7 @@
         <input id="nickname" maxlength="12" placeholder="닉네임 입력" autocomplete="off" />
         <div id="join-hint" class="hint hidden"></div>
         <button id="btn-join" class="btn btn-primary hidden">방 입장하기</button>
-        <button id="btn-create" class="btn btn-primary">방 만들기 (온라인 1:1)</button>
+        <button id="btn-create" class="btn btn-primary">방 만들기 (온라인 최대 4인)</button>
         <div class="or"><span>또는 함께할 사람이 없다면</span></div>
         <button id="btn-solo" class="btn">혼자 하기 — AI 교도관과 대결 (죄수로 플레이)</button>
         <div id="online-warn" class="warn hidden">
@@ -50,13 +51,16 @@
           <button id="btn-copy" class="btn btn-small">복사</button>
         </div>
         <div class="room-code">방 코드 <b id="room-code"></b></div>
-        <div class="wait-status"><span class="pulse"></span><span id="wait-text">상대 생존자를 기다리는 중…</span></div>
+        <div class="lbl wait-head">참가자 <span id="wait-count"></span></div>
+        <ul id="wait-players" class="wait-players"></ul>
+        <div class="wait-status"><span class="pulse"></span><span id="wait-text">생존자를 기다리는 중…</span></div>
+        <button id="btn-start" class="btn btn-primary hidden">게임 시작</button>
         <button id="btn-leave" class="btn btn-ghost">나가기</button>
       </div>
 
       <div class="controls-help">
         <b>조작</b> 방향키·마우스 클릭 이동 · <b>Space</b> 점프 · <b>Z</b> 앉기 · <b>X</b> 달리기 · <b>C</b> 행동(숨기/문 잠그기) · <b>M</b> 지도<br />
-        <b>방법</b> 방을 만들고 초대 링크를 친구에게 보내면 1:1 대전이 시작됩니다
+        <b>방법</b> 방을 만들고 초대 링크를 친구들에게 보내세요 (2~4명) · 교도관 1명, 나머지는 죄수로 랜덤 배정
       </div>
     </div>
   </section>
@@ -66,14 +70,14 @@
     <div class="modal-card">
       <button id="btn-howto-close" class="modal-x" aria-label="닫기">✕</button>
       <h2 id="howto-title">게임 방법</h2>
-      <p class="howto-lead">좀비로 가득 찬 교도소. 한 명은 <b class="c-pr">죄수</b>가 되어 탈출하고, 한 명은 <b class="c-gd">교도관</b>이 되어 막는다. 둘 다 좀비에게 잡히면 즉시 패배.</p>
+      <p class="howto-lead">좀비로 가득 찬 교도소. 최대 4명 중 한 명은 <b class="c-gd">교도관</b>이 되어 막고, 나머지(최대 3명)는 <b class="c-pr">죄수</b>가 되어 각자 탈출한다. 좀비에게 잡히면 그 자리에서 아웃.</p>
 
       <div class="howto-roles">
         <div class="howto-role">
           <img src="assets/img/portrait_prisoner.jpg" alt="" />
           <div>
             <h3 class="c-pr">죄수</h3>
-            <p><b>목표</b> 맵에 흩어진 <b>열쇠 조각 3개</b>를 모아 운동장 동쪽 <b>정문</b>으로 탈출</p>
+            <p><b>목표</b> 맵에 흩어진 <b>열쇠 조각 3개</b>를 각자 모아 운동장 동쪽 <b>정문</b>으로 탈출 (죄수 수 × 3개가 뿌려짐)</p>
             <ul>
               <li><b>C</b> 사물함에 숨기 — 최대 10초, 교도관·좀비에게 안 보임</li>
               <li>교도관에게 잡히면 감방으로 끌려가고 열쇠 1개를 떨어뜨림</li>
@@ -85,7 +89,7 @@
           <img src="assets/img/portrait_guard.jpg" alt="" />
           <div>
             <h3 class="c-gd">교도관</h3>
-            <p><b>목표</b> <b>10분</b> 동안 죄수의 탈출을 막기</p>
+            <p><b>목표</b> <b>10분</b> 동안 죄수 과반의 탈출을 막기</p>
             <ul>
               <li><b>C</b> 문 잠그기 — 동시에 3개까지, 25초 뒤 자동 해제</li>
               <li>넓은 손전등 시야 (단, 멀리서도 불빛이 보임)</li>
@@ -116,14 +120,15 @@
 
       <h3>승리 조건</h3>
       <ul>
-        <li>죄수가 정문으로 탈출 → <b class="c-pr">죄수 승리</b></li>
-        <li>10분이 지남 → <b class="c-gd">교도관 승리</b></li>
-        <li>좀비에게 잡힘 / 연결이 끊김 → 상대 승리</li>
+        <li>정문으로 탈출한 죄수 → <b class="c-pr">그 죄수 승리</b> (탈출하면 남은 동료를 관전)</li>
+        <li>탈출한 죄수가 과반 미만(3명 중 1명 이하)이면 → <b class="c-gd">교도관 승리</b></li>
+        <li>좀비에게 잡힌 죄수 → 패배 · 교도관이 좀비에게 잡히면 → 살아남은 죄수 전원 승리</li>
+        <li>모든 죄수가 탈출/사망하거나 10분이 지나면 판 종료</li>
       </ul>
 
       <h3>플레이 방법</h3>
       <ul>
-        <li><b>온라인 1:1</b> — 방 만들기 → 초대 링크를 친구에게 보내기. 역할은 서버가 랜덤 배정</li>
+        <li><b>온라인 2~4인</b> — 방 만들기 → 초대 링크를 친구들에게 보내기 → 방장이 "게임 시작". 교도관 1명은 서버가 랜덤 배정</li>
         <li><b>혼자 하기</b> — 내가 죄수, AI 교도관과 대결</li>
       </ul>
       <p class="howto-tip">💡 팁: 어둠 속에선 앉아서 움직이고, 좀비가 몰려오면 점프로 탁자를 넘어 따돌리세요.</p>
@@ -188,6 +193,7 @@
       <div id="result-mine" class="result-mine"></div>
       <div id="result-title" class="result-title"></div>
       <div id="result-reason" class="result-reason"></div>
+      <ul id="result-roster" class="result-roster"></ul>
       <div class="dex">
         <div class="dex-title">엔딩 도감 <span id="dex-count"></span></div>
         <div id="dex-list" class="dex-list"></div>

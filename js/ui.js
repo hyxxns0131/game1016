@@ -28,9 +28,17 @@ export const hud = {
   show() { $('hud').classList.remove('hidden'); },
   hide() { $('hud').classList.add('hidden'); $('hud-hint').classList.add('hidden'); },
 
-  setupCards(players, mode) {
+  setupCards(players, mode, all = players) {
     const left = $('hud-left');
     left.innerHTML = '';
+    // 3명 이상이면 전원 상태판(역할 · 열쇠 · 탈출/사망)
+    this.team = null;
+    if (all.length > 2 || (mode === 'online' && all.length > 1)) {
+      const el = document.createElement('div');
+      el.className = 'pcard team';
+      left.appendChild(el);
+      this.team = { el, all };
+    }
     this.cards = players.map((p) => {
       const el = document.createElement('div');
       el.className = 'pcard';
@@ -58,9 +66,23 @@ export const hud = {
     $('hud-phase').textContent = phase.name;
     $('hud-phase-box').className = `hud-box hud-phase p${phaseIdx}`;
 
+    if (this.team) {
+      const ST = { escaped: '🚪 탈출', dead: '☠ 사망', left: '⚠ 이탈' };
+      this.team.el.innerHTML = this.team.all.map((p) => {
+        const state = ST[p.status] || (p.role === 'prisoner' ? `🔑 ${p.keys}/${PRISONER.keysNeeded}` : '🔦 감시 중');
+        return `<div class="trow ${p.status}${p.local ? ' me' : ''}"><span class="role ${p.role}">${p.role === 'prisoner' ? '죄수' : '교도관'}</span><span class="tn"></span><span class="ts">${state}</span></div>`;
+      }).join('');
+      this.team.el.querySelectorAll('.tn').forEach((n, i) => (n.textContent = this.team.all[i].nickname));
+    }
+
     const hints = [];
     for (const c of this.cards) {
       const p = c.p;
+      if (p.status && p.status !== 'alive') {
+        c.el.classList.add('out');
+        c.st.textContent = { escaped: '탈출 성공 — 관전 중', dead: '사망 — 관전 중', left: '' }[p.status] || '';
+        continue;
+      }
       if (p.role === 'prisoner') {
         c.v.innerHTML = `<span class="keys">${Array.from({ length: PRISONER.keysNeeded }, (_, i) => `<span class="${i < p.keys ? 'on' : ''}"></span>`).join('')}</span>`;
       } else {
@@ -155,7 +177,7 @@ export const minimap = {
       d.tiles.forEach((t) => c.fillRect(t.tx * MM, t.ty * MM, MM, MM));
     }
     // 열쇠(죄수만 위치를 안다)
-    const viewers = scene.players.filter((p) => p.local);
+    const viewers = scene.povs();
     if (viewers.some((p) => p.role === 'prisoner')) {
       for (const key of scene.keys) if (!key.taken) {
         c.fillStyle = '#f5c041';
@@ -167,7 +189,15 @@ export const minimap = {
       c.strokeStyle = '#ffd23a'; c.lineWidth = 1.5;
       c.strokeRect(m.gateTiles[0].tx * MM - 2, m.gateTiles[0].ty * MM - 2, MM + 4, m.gateTiles.length * MM + 4);
     }
-    // 나(와 로컬 플레이어)
+    // 동료 죄수(죄수 시점일 때)
+    if (viewers.some((p) => p.role === 'prisoner')) {
+      for (const p of scene.prisoners) {
+        if (viewers.includes(p) || !scene.active(p)) continue;
+        c.fillStyle = '#ffb36b';
+        c.beginPath(); c.arc(p.x * k, p.y * k, 2.5, 0, Math.PI * 2); c.fill();
+      }
+    }
+    // 나(와 로컬 플레이어 / 관전 대상)
     for (const p of viewers) {
       const x = p.x * k, y = p.y * k;
       c.fillStyle = p.role === 'prisoner' ? '#ff8a2a' : '#7fb0ff';

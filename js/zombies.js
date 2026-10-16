@@ -94,9 +94,9 @@ export class ZombieSim {
           if (d < range && d < bd && this.map.los(z.x, z.y, p.x, p.y)) { best = p; bd = d; }
         }
         if (best) {
-          z.state = ST.chase; z.chase = best.role; z.lostT = 0; z.lastSeen = { x: best.x, y: best.y };
+          z.state = ST.chase; z.chase = best.userId; z.lostT = 0; z.lastSeen = { x: best.x, y: best.y };
         } else if (z.state === ST.chase) {
-          const p = players.find((q) => q.role === z.chase);
+          const p = players.find((q) => q.userId === z.chase);
           z.lostT += 0.2;
           if (!p || p.hidden || p.dead || z.lostT > ZOMBIE.loseSightTime) {
             z.state = ST.investigate;
@@ -110,7 +110,7 @@ export class ZombieSim {
 
       let speed, aimField, aimPoint;
       if (z.state === ST.chase) {
-        const p = players.find((q) => q.role === z.chase);
+        const p = players.find((q) => q.userId === z.chase);
         if (p && !p.hidden) {
           if (z.lostT === 0) z.lastSeen = { x: p.x, y: p.y };
           aimPoint = z.lostT === 0 ? { x: p.x, y: p.y } : z.lastSeen;

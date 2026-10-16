@@ -1,4 +1,4 @@
-import { OnlineNet, LocalNet, SoloNet, onlineAvailable } from './net.js';
+import { OnlineNet, LocalNet, SoloNet, onlineAvailable, MAX_PLAYERS } from './net.js';
 import { GAME } from './config.js';
 import { BootScene } from './scenes/BootScene.js';
 import { GameScene } from './scenes/GameScene.js';
@@ -36,8 +36,24 @@ game.scene.add('Boot', BootScene, true, {
   },
 });
 
-document.addEventListener('pointerdown', () => sfx.ensure(), { once: false });
-document.addEventListener('keydown', () => sfx.ensure(), { once: true });
+// 브라우저는 사용자가 한 번 누르기 전엔 소리를 막는다 → 첫 입력 때 로비 BGM 시작
+const unlockAudio = () => { sfx.ensure(); if (!sfx.music && !$('screen-lobby').classList.contains('hidden')) sfx.startMusic('lobby'); };
+document.addEventListener('pointerdown', unlockAudio);
+document.addEventListener('keydown', unlockAudio, { once: true });
+// 버튼 딸깍
+document.addEventListener('click', (e) => { if (e.target.closest('button')) sfx.click(); });
+
+const bgmBtn = $('btn-bgm');
+const syncBgmBtn = () => bgmBtn.classList.toggle('off', !sfx.musicOn);
+bgmBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  sfx.ensure();
+  sfx.setMusicOn(!sfx.musicOn);
+  if (sfx.musicOn && !sfx.music) sfx.startMusic(game.scene.isActive('Game') ? 'game' : 'lobby');
+  syncBgmBtn();
+});
+syncBgmBtn();
+let lastPlayerCount = 0;
 
 // ---------------------------------------------------------------- 로비
 function roomCodeFromUrl() {
@@ -62,12 +78,18 @@ function setBusy(b) {
   ['btn-create', 'btn-join', 'btn-solo'].forEach((id) => ($(id).disabled = b));
 }
 
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
 function showLobby() {
   stopPolling();
   matchRound = -1;
   game.scene.stop('Game');
   game.scene.stop('Ending');
   showScreen('screen-lobby');
+  if (sfx.ctx) sfx.startMusic('lobby');
+  lastPlayerCount = 0;
   $('lobby-main').classList.remove('hidden');
   $('lobby-wait').classList.add('hidden');
   showError('');
@@ -92,7 +114,42 @@ function showWaiting() {
   const link = `${location.origin}${location.pathname}#/room/${net.room.code}`;
   $('invite-link').value = link;
   $('room-code').textContent = net.room.code;
-  $('wait-text').textContent = '상대 생존자를 기다리는 중…';
+  renderWaiting();
+}
+
+/** 대기실: 참가자 목록 + 방장의 '게임 시작' 버튼 */
+function renderWaiting() {
+  if (!net || net.mode !== 'online' || $('lobby-wait').classList.contains('hidden')) return;
+  const n = net.players.length;
+  if (lastPlayerCount && n > lastPlayerCount) sfx.joinChime();
+  else if (lastPlayerCount && n < lastPlayerCount) sfx.leaveChime();
+  lastPlayerCount = n;
+  $('wait-players').innerHTML = Array.from({ length: MAX_PLAYERS }, (_, i) => {
+    const p = net.players[i];
+    if (!p) return '<li class="empty">빈 자리</li>';
+    const tags = [p.user_id === net.room.host_id ? '방장' : '', p.user_id === net.uid ? '나' : ''].filter(Boolean).join(' · ');
+    return `<li><span>${esc(p.nickname)}</span>${tags ? `<small>${tags}</small>` : ''}</li>`;
+  }).join('');
+  $('wait-count').textContent = `${n} / ${MAX_PLAYERS}`;
+  const start = $('btn-start');
+  start.classList.toggle('hidden', !net.isHost);
+  start.disabled = n < 2;
+  start.textContent = n < 2 ? '2명 이상 모이면 시작할 수 있습니다' : `게임 시작 (${n}명 — 교도관 1 · 죄수 ${n - 1})`;
+  $('wait-text').textContent = net.isHost
+    ? (n < MAX_PLAYERS ? '초대 링크를 보내 생존자를 모으세요 (최대 4명)' : '방이 꽉 찼습니다. 시작하세요!')
+    : '방장이 게임을 시작하길 기다리는 중…';
+}
+
+async function startGame() {
+  $('btn-start').disabled = true;
+  try {
+    await net.startGame();
+    net.send('start', {});
+    startMatch();
+  } catch (e) {
+    toast(e.message);
+    renderWaiting();
+  }
 }
 
 /** 게임 시작 전 스토리 인트로 (개발용 autostart에선 생략) */
@@ -110,7 +167,7 @@ async function createRoom() {
     await net.init();
     await net.createRoom(nick);
     history.replaceState(null, '', `${location.pathname}#/room/${net.room.code}`);
-    await net.subscribe(nick);
+    await net.subscribe();
     bindRoom();
     showWaiting();
     startPolling();
@@ -131,7 +188,7 @@ async function joinRoom() {
     net = new OnlineNet();
     await net.init();
     await net.joinRoom(code, nick);
-    await net.subscribe(nick);
+    await net.subscribe();
     bindRoom();
     net.send('joined', {});
     if (net.room.status === 'playing') startMatch();
@@ -151,12 +208,11 @@ function bindRoom() {
     } catch (e) { console.warn(e); }
   };
   net.on('joined', check);
-  net.on('rematch', check);
-  net.on('presence-join', (id) => {
-    if (id !== net.uid && !$('lobby-wait').classList.contains('hidden')) $('wait-text').textContent = '상대가 접속했다!';
-  });
-  net.on('presence-leave', (id) => {
-    if (id !== net.uid && !$('screen-result').classList.contains('hidden')) updateAgainButton();
+  net.on('start', check);
+  net.on('left', check);
+  net.on('state', () => {
+    renderWaiting();
+    if (!$('screen-result').classList.contains('hidden')) updateAgainButton();
   });
 }
 
@@ -169,9 +225,8 @@ function startPolling() {
   pollTimer = setInterval(async () => {
     if (!net || net.mode !== 'online') return;
     try {
-      await net.refresh();
+      await net.heartbeat();
       maybeStart();
-      if (!$('screen-result').classList.contains('hidden')) updateAgainButton();
     } catch (e) { console.warn(e); }
   }, 2000);
 }
@@ -185,7 +240,7 @@ async function startSolo() {
   setBusy(true);
   await intro();
   net = new SoloNet(nick);
-  await net.assignRoles();
+  await net.startGame();
   const skip = Number(params.get('debugTime') || 0);
   if (skip) net.room.started_at = new Date(Date.parse(net.room.started_at) - skip * 1000).toISOString();
   startMatch();
@@ -194,7 +249,7 @@ async function startSolo() {
 async function startLocal() {
   sfx.ensure();
   net = new LocalNet();
-  await net.assignRoles();
+  await net.startGame();
   const skip = Number(params.get('debugTime') || 0);
   if (skip) net.room.started_at = new Date(Date.parse(net.room.started_at) - skip * 1000).toISOString();
   startMatch();
@@ -217,15 +272,17 @@ function startMatch() {
   const roleEl = $('reveal-role');
   roleEl.textContent = ROLE_KO[role];
   roleEl.className = `reveal-role ${role}`;
+  const prisonerCount = net.players.filter((p) => p.role === 'prisoner').length;
   $('reveal-goal').textContent = role === 'prisoner'
-    ? '열쇠 조각 3개를 모아 운동장 동쪽 정문으로 탈출하라.'
-    : '10분 동안 죄수의 탈출을 막아라.';
+    ? `열쇠 조각 3개를 모아 운동장 동쪽 정문으로 탈출하라.${prisonerCount > 1 ? ` 동료 죄수 ${prisonerCount - 1}명과 함께.` : ''}`
+    : prisonerCount > 1 ? `10분 동안 죄수 ${prisonerCount}명을 막아라. 과반이 탈출하면 패배.` : '10분 동안 죄수의 탈출을 막아라.';
   $('reveal-skills').innerHTML = role === 'prisoner'
     ? 'X 달리기 (스태미나 · 소음) · Space 점프 (탁자 넘기 · 공중에선 안 잡힘) · Z 앉기 (조용히)<br>C 사물함에 숨기 (최대 10초 · 교도관·좀비에게 안 보임)<br>교도관에게 잡히면 감방으로 끌려가고 열쇠 1개를 떨어뜨린다'
     : 'C 문 잠그기 (동시에 최대 3개 · 쿨다운) · 넓은 손전등 시야<br>X 달리기 · Space 점프 · Z 앉기<br>죄수와 접촉하면 체포 → 감방으로 돌려보냄';
+  const others = net.players.filter((p) => p.user_id !== me.user_id);
   $('reveal-vs').textContent = local
-    ? `P2 (WASD) = ${ROLE_KO[net.opponent.role]}  ·  좀비에게 잡히면 즉시 패배`
-    : `상대: ${net.opponent.nickname} (${ROLE_KO[net.opponent.role]})  ·  좀비에게 잡히면 즉시 패배`;
+    ? `P2 (WASD) = ${ROLE_KO[others[0].role]}  ·  좀비에게 잡히면 아웃`
+    : `${others.map((p) => `${p.nickname} (${ROLE_KO[p.role]})`).join(' · ')}  ·  좀비에게 잡히면 아웃`;
   $('countdown').classList.add('hidden');
   showScreen('screen-reveal');
   sfx.slam();
@@ -265,38 +322,58 @@ function startMatch() {
 function viewer(state) {
   const myId = net.mode === 'online' ? net.uid : net.me.user_id;
   const me = state.players.find((p) => p.user_id === myId);
-  return { me, iWon: state.room.winner_id === myId };
+  return { me, iWon: !!me?.won };
+}
+
+/** 엔딩 컷의 대체 장면(좀비 버전)을 고르기 위한, 보는 사람 기준 종료 사유 */
+function viewerReason(state) {
+  const { me } = viewer(state);
+  const ps = state.players;
+  const anyEscaped = ps.some((p) => p.status === 'escaped');
+  const anyDead = ps.some((p) => p.role === 'prisoner' && p.status === 'dead');
+  if (me?.status === 'dead' || state.room.end_reason === 'guard_down') return 'zombie';
+  if (me?.role === 'guard' && me.won && anyDead && !anyEscaped) return 'zombie';
+  return state.room.end_reason;
 }
 
 async function onGameOver(state) {
   game.scene.stop('Game');
+  if (net.mode === 'online') startPolling(); // 엔딩 컷신 동안에도 하트비트 유지(방에서 빠지지 않게)
   showScreen(null);
   const room = state.room;
   const { me, iWon } = viewer(state);
   // 엔딩은 '내' 역할과 승패로 고른다 → 졌으면 LOSE 엔딩
-  const ending = room.end_reason !== 'disconnect' && me ? pickEnding(me.role, iWon) : null;
+  const ending = room.end_reason !== 'guard_left' && me && me.status !== 'left' ? pickEnding(me.role, iWon) : null;
   if (!ending) { showResult(state); return; }
 
   const header = iWon ? { text: '승리 · WIN', cls: 'win' } : { text: '패배 · LOSE', cls: 'lose' };
   markEndingSeen(ending.id);
   await document.fonts.ready;
   game.scene.start('Ending', {
-    ending, endReason: room.end_reason, header,
+    ending, endReason: viewerReason(state), header,
     onDone: () => { game.scene.stop('Ending'); showResult(state); },
   });
 }
 
 function reasonText(state) {
-  const room = state.room;
-  const { me, iWon } = viewer(state);
-  const loser = state.players.find((p) => p.user_id !== room.winner_id);
-  switch (room.end_reason) {
-    case 'escape': return iWon ? '열쇠 조각 3개로 정문을 열고 탈출했다!' : '죄수가 정문을 열고 탈출해버렸다.';
-    case 'time': return iWon ? '10분을 버텼다. 교대 시간이다.' : '시간이 다 됐다. 정문은 끝내 열리지 않았다.';
-    case 'zombie': return loser?.user_id === me?.user_id ? '좀비에게 물렸다…' : `${loser?.nickname ?? '상대'}(${ROLE_KO[loser?.role] ?? ''})이(가) 좀비에게 잡혔다.`;
-    case 'disconnect': return iWon ? '상대의 연결이 끊어졌다.' : '연결이 끊어졌다.';
-    default: return '';
-  }
+  const { me } = viewer(state);
+  const prisoners = state.players.filter((p) => p.role === 'prisoner');
+  const escaped = prisoners.filter((p) => p.status === 'escaped').length;
+  const head = {
+    resolved: `죄수 ${prisoners.length}명 중 ${escaped}명 탈출.`,
+    time: `10분이 지났다. 죄수 ${prisoners.length}명 중 ${escaped}명 탈출.`,
+    guard_down: '교도관이 좀비에게 쓰러졌다. 남은 죄수들은 자유다.',
+    guard_left: '교도관의 연결이 끊어졌다.',
+  }[state.room.end_reason] || '';
+  const mine = { escaped: '나는 정문을 열고 탈출했다!', dead: '나는 좀비에게 물렸다…' }[me?.status]
+    || (me?.role === 'guard' && me.won ? '교도소를 지켜냈다.' : '');
+  return `${head} ${mine}`.trim();
+}
+
+function renderRoster(state) {
+  const ST = { alive: '생존', escaped: '🚪 탈출', dead: '☠ 사망', left: '⚠ 이탈' };
+  $('result-roster').innerHTML = state.players.filter((p) => p.role).map((p) =>
+    `<li class="${p.won ? 'win' : 'lose'}"><span class="role ${p.role}">${ROLE_KO[p.role]}</span><span class="nm">${esc(p.nickname)}</span><span class="st">${ST[p.status] || ''}</span><b>${p.won ? 'WIN' : 'LOSE'}</b></li>`).join('');
 }
 
 function renderDex() {
@@ -324,8 +401,10 @@ function showResult(state) {
   mine.className = `result-mine ${iWon ? 'win' : 'lose'}`;
   $('result-title').textContent = me ? `${ROLE_KO[me.role]} ${me.nickname} — ${iWon ? '승리' : '패배'}` : '';
   $('result-reason').textContent = reasonText(state);
+  renderRoster(state);
   renderDex();
   showScreen('screen-result');
+  setTimeout(() => { if (!$('screen-result').classList.contains('hidden')) sfx.startMusic('lobby'); }, 2500);
   $('result-wait').textContent = '';
   updateAgainButton();
   if (net.mode === 'online') startPolling();
@@ -334,16 +413,20 @@ function showResult(state) {
 function updateAgainButton() {
   const btn = $('btn-again');
   if (net.mode !== 'online') { btn.disabled = false; $('result-wait').textContent = ''; return; }
-  const ok = net.opponentOnline();
-  btn.disabled = !ok;
-  $('result-wait').textContent = ok ? '둘 중 누구든 "다시 하기"를 누르면 같은 방에서 역할을 다시 뽑습니다.' : '상대가 방을 나갔습니다.';
+  const n = net.players.length;
+  btn.disabled = !net.isHost || n < 2;
+  $('result-wait').textContent = n < 2
+    ? '다른 사람이 모두 방을 나갔습니다. 초대 링크로 다시 모으세요.'
+    : net.isHost
+      ? `"다시 하기"를 누르면 같은 방(${n}명)에서 역할을 다시 뽑습니다. 새 친구도 초대 링크로 들어올 수 있어요.`
+      : `방장이 다시 시작하길 기다리는 중… (${n}명)`;
 }
 
 async function again() {
   $('btn-again').disabled = true;
   try {
-    await net.assignRoles();
-    if (net.mode === 'online') net.send('rematch', {});
+    await net.startGame();
+    if (net.mode === 'online') net.send('start', {});
     startMatch();
   } catch (e) {
     toast(e.message);
@@ -353,7 +436,7 @@ async function again() {
 
 async function toLobby() {
   stopPolling();
-  if (net) await net.leave();
+  if (net) { net.send('left', {}); await net.leave(); }
   net = null;
   history.replaceState(null, '', location.pathname);
   showLobby();
@@ -369,6 +452,7 @@ $('btn-howto-close').addEventListener('click', () => howto(false));
 $('howto').addEventListener('click', (e) => { if (e.target.id === 'howto') howto(false); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') howto(false); });
 $('btn-again').addEventListener('click', again);
+$('btn-start').addEventListener('click', startGame);
 $('btn-lobby').addEventListener('click', toLobby);
 $('btn-leave').addEventListener('click', toLobby);
 $('btn-copy').addEventListener('click', async () => {
@@ -389,13 +473,13 @@ if (params.get('ending')) {
   pendingStart = null;
   const run = () => {
     net = new LocalNet();
-    net.players[0].role = 'prisoner'; net.players[1].role = 'guard';
     const ending = getEnding(params.get('ending'));
-    // P1(죄수) 시점: 엔딩의 역할이 죄수면 P1이 승패 주체
-    const winnerRole = ending.win ? ending.role : (ending.role === 'prisoner' ? 'guard' : 'prisoner');
-    if (ending.role === 'guard') { net.players[0].role = 'guard'; net.players[1].role = 'prisoner'; }
-    const winner = net.players.find((p) => p.role === winnerRole);
-    onGameOver({ room: { ...net.room, status: 'finished', ending: ending.id, end_reason: params.get('reason') || 'escape', winner_id: winner.user_id }, players: net.players });
+    // P1 시점: 엔딩의 역할/승패를 P1에게 준다
+    net.players[0].role = ending.role;
+    net.players[1].role = ending.role === 'prisoner' ? 'guard' : 'prisoner';
+    net.players[0].won = ending.win; net.players[1].won = !ending.win;
+    if (params.get('reason') === 'zombie') net.players[0].status = ending.win ? 'alive' : 'dead';
+    onGameOver({ room: { ...net.room, status: 'finished', ending: ending.id, end_reason: 'resolved' }, players: net.players });
   };
   if (assetsReady) run(); else pendingStart = run;
 }

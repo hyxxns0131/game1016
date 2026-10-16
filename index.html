@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>좀비 감옥 탈출</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;700;900&family=Special+Elite&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- 화면 효과 -->
+  <div id="fx-red" class="fx"></div>
+  <div id="fx-vignette" class="fx"></div>
+  <div id="fx-grain" class="fx"></div>
+
+  <!-- 로비 -->
+  <section id="screen-lobby" class="screen">
+    <div class="lobby-bg"></div>
+    <div class="lobby-panel">
+      <div class="title-wrap">
+        <div class="title-sub">ZOMBIE PRISON BREAK</div>
+        <h1 class="title">좀비 감옥 탈출</h1>
+        <div class="title-tag">감염 발생 47일째. 교도소 C동, 전력 차단.</div>
+      </div>
+
+      <div id="lobby-main" class="card">
+        <label class="lbl" for="nickname">생존자 이름</label>
+        <input id="nickname" maxlength="12" placeholder="닉네임 입력" autocomplete="off" />
+        <div id="join-hint" class="hint hidden"></div>
+        <button id="btn-join" class="btn btn-primary hidden">방 입장하기</button>
+        <button id="btn-create" class="btn btn-primary">방 만들기 (온라인 1:1)</button>
+        <div id="online-warn" class="warn hidden">
+          Supabase가 설정되지 않아 온라인 대전을 쓸 수 없습니다.<br />
+          <code>js/env.js</code>에 URL과 anon key를 넣어주세요.
+        </div>
+        <div id="lobby-error" class="error hidden"></div>
+      </div>
+
+      <div id="lobby-wait" class="card hidden">
+        <div class="lbl">초대 링크</div>
+        <div class="invite-row">
+          <input id="invite-link" readonly />
+          <button id="btn-copy" class="btn btn-small">복사</button>
+        </div>
+        <div class="room-code">방 코드 <b id="room-code"></b></div>
+        <div class="wait-status"><span class="pulse"></span><span id="wait-text">상대 생존자를 기다리는 중…</span></div>
+        <button id="btn-leave" class="btn btn-ghost">나가기</button>
+      </div>
+
+      <div class="controls-help">
+        <b>조작</b> 방향키 이동 · <b>Space</b> 점프 · <b>Z</b> 앉기 · <b>X</b> 달리기 · <b>C</b> 행동(숨기/문 잠그기)<br />
+        <b>방법</b> 방을 만들고 초대 링크를 친구에게 보내면 1:1 대전이 시작됩니다
+      </div>
+    </div>
+  </section>
+
+  <!-- 역할 공개 -->
+  <section id="screen-reveal" class="screen hidden">
+    <div class="reveal-inner">
+      <div class="reveal-portrait"><img id="reveal-img" alt="" /></div>
+      <div class="reveal-text">
+        <div class="reveal-label" id="reveal-label">당신의 역할</div>
+        <div class="reveal-role" id="reveal-role"></div>
+        <div class="reveal-goal" id="reveal-goal"></div>
+        <div class="reveal-skills" id="reveal-skills"></div>
+        <div class="reveal-vs" id="reveal-vs"></div>
+      </div>
+    </div>
+    <div id="countdown" class="countdown hidden"></div>
+  </section>
+
+  <!-- 게임 HUD -->
+  <section id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="hud-box hud-timer"><div class="hud-k">남은 시간</div><div id="hud-time">10:00</div></div>
+      <div class="hud-box hud-phase" id="hud-phase-box"><div class="hud-k">감염 단계</div><div id="hud-phase">하</div></div>
+    </div>
+    <div class="hud-left" id="hud-left"></div>
+    <div id="hud-banner" class="hud-banner hidden"></div>
+    <div id="hud-hint" class="hud-hint hidden"></div>
+    <div id="hud-msg" class="hud-msg"></div>
+  </section>
+
+  <!-- 엔딩 컷신 오버레이(스킵 버튼 / 승패) -->
+  <section id="ending-ui" class="hidden">
+    <div id="ending-result" class="ending-result"></div>
+    <button id="btn-skip" class="btn btn-small btn-skip">SKIP ▶▶</button>
+  </section>
+
+  <!-- 결과 화면 -->
+  <section id="screen-result" class="screen hidden">
+    <div class="result-panel">
+      <div id="result-mine" class="result-mine"></div>
+      <div id="result-title" class="result-title"></div>
+      <div id="result-reason" class="result-reason"></div>
+      <div class="dex">
+        <div class="dex-title">엔딩 도감 <span id="dex-count"></span></div>
+        <div id="dex-list" class="dex-list"></div>
+      </div>
+      <div class="result-btns">
+        <button id="btn-again" class="btn btn-primary">다시 하기 (역할 재추첨)</button>
+        <button id="btn-lobby" class="btn">로비로</button>
+      </div>
+      <div id="result-wait" class="hint"></div>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

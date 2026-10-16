@@ -1,0 +1,104 @@
+# LAST SHIFT — 좀비 감옥 탈출
+
+좀비에게 점령당한 감옥을 배경으로 한 탑다운 생존 게임 프로토타입입니다. 죄수로 열쇠 조각을 모아 탈출하거나, 교도관으로 죄수를 막으며 3분을 버티세요.
+
+## 실행 방법
+
+별도 패키지 설치 없이 `index.html`을 브라우저로 열면 플레이할 수 있습니다. 로컬 웹 서버를 쓰고 싶다면 프로젝트 폴더에서 다음 명령을 실행하세요.
+
+```powershell
+python -m http.server 8000
+```
+
+그다음 브라우저에서 `http://localhost:8000`을 엽니다.
+
+## 조작 방법
+
+| 키 | 동작 |
+| --- | --- |
+| `W A S D` 또는 방향키 | 이동 |
+| `Shift` | 달리기 (스태미나 소모, 소음 증가) |
+| `E` 또는 `Space` | 사물함 숨기 / 나오기, 탈출구 상호작용 |
+| `Esc` | 일시 정지 |
+
+## 플레이
+
+- **죄수:** 감옥 곳곳의 열쇠 조각 3개를 모아 남쪽 정문에 도달하면 승리합니다. 교도관에게 잡히면 감방으로 돌아가고 열쇠 조각 하나를 잃습니다.
+- **교도관:** 죄수를 접촉해 체포하거나 타이머가 끝날 때까지 생존하면 승리합니다.
+- **좀비:** 플레이어와 AI 상대를 감지해 추적합니다. 좀비에게 닿으면 패배하며, 게임 시간이 지날수록 감지 범위와 이동 속도가 증가합니다.
+- **숨기:** 사물함 근처에서 `E`를 누르면 최대 10초 동안 좀비와 AI 상대의 추적을 피합니다.
+- **재시작:** 결과 화면에서 다시 시작을 선택하거나 역할 선택 화면으로 돌아와 다른 역할을 시험할 수 있습니다.
+
+## 구현 범위
+
+- HTML, CSS, Canvas 2D, 순수 JavaScript로 제작했습니다. 별도 빌드 단계나 패키지 설치가 필요 없습니다.
+- 인물은 Canvas에서 얼굴·체형·의상에 음영과 질감을 더해 실사풍으로 직접 그립니다. 외부 캐릭터 이미지 파일은 사용하지 않습니다.
+- 맵, 감방, 식당, 경비실, 정문, 열쇠, 사물함, AI 상대, 추적 좀비, 난이도 상승, 승패 화면이 포함된 1인용 프로토타입입니다.
+- 효과음 버튼은 브라우저 내장 오디오를 사용하며 기본적으로 꺼져 있습니다.
+
+## 현재 미구현
+
+이 버전은 온라인 1:1 대전 프로토타입이 아닙니다. 이 작업 폴더에는 Supabase 프로젝트 URL/키와 데이터베이스 연결 수단이 제공되지 않아 익명 로그인, 초대 방, 서버 역할 배정, RLS/RPC, Realtime 동기화를 구성하지 않았습니다. 실제 멀티플레이어 배포 전에는 해당 백엔드와 서버 권한 검증을 추가해야 합니다. 현재의 인물 표현은 코드로 그린 실사풍 Canvas 그래픽이며, 사진 기반의 완전한 실사 캐릭터 에셋은 포함하지 않습니다.
+
+---
+
+# 실행 & 테스트 방법
+
+## 1. Supabase 준비 (최초 1회)
+1. [supabase.com](https://supabase.com)에서 프로젝트 생성
+2. **Authentication → Sign In / Providers → Anonymous sign-ins** 활성화
+3. **SQL Editor**에 `supabase/schema.sql` 전체를 붙여넣고 **Run**
+   (테이블 `rooms`, `room_players` + RLS + 함수 `create_room / join_room / assign_roles / end_game / get_room_state` 생성)
+4. **Project Settings → API**에서 Project URL과 `anon` key를 복사해 `js/env.js`에 입력
+   ```js
+   export const SUPABASE_URL = 'https://xxxx.supabase.co';
+   export const SUPABASE_ANON_KEY = 'eyJ...';
+   ```
+   ※ `service_role` 키는 절대 넣지 마세요.
+
+## 2. 로컬 서버 실행
+ES 모듈과 이미지 로딩 때문에 `index.html`을 더블클릭하면 안 되고, 정적 서버로 열어야 합니다.
+```bash
+python -m http.server 8080
+# 또는
+npx serve .
+```
+브라우저에서 `http://localhost:8080` 접속.
+
+## 3. 두 브라우저 창으로 1:1 테스트
+1. 창 A: 닉네임 입력 → **방 만들기** → 초대 링크(`…/#/room/ABC123`) **복사**
+2. 창 B: 새 창(또는 시크릿 창)에 링크 붙여넣기 → 닉네임 입력 → **방 입장하기**
+   - 로그인 세션을 탭마다 따로 저장(sessionStorage)하므로 같은 브라우저의 탭 두 개도 서로 다른 플레이어가 됩니다.
+3. 서버(assign_roles)가 역할을 랜덤 배정 → 역할 공개 3초 → 카운트다운 → 시작
+4. 세 번째 창으로 같은 링크에 들어가면 "방이 가득 찼습니다"가 표시됩니다.
+5. 한 창을 닫으면 4초 뒤 남은 플레이어가 승리합니다(연결 끊김 → 컷신 없이 결과 화면).
+
+> 다른 컴퓨터의 친구와 하려면 정적 호스팅(Vercel, Netlify, GitHub Pages 등)에 폴더 전체를 올리고 그 주소로 초대 링크를 만드세요.
+
+## 조작
+| 키 | 동작 |
+|---|---|
+| 방향키 | 이동 |
+| Space | 점프 — 탁자·침대를 넘어감, 공중에선 좀비/교도관에게 잡히지 않음 (스태미나 소모) |
+| Z (누르는 동안) | 앉기 — 느리지만 문을 조용히 통과, 좀비 감지 범위 ↓, 교도관 손전등에 덜 보임 |
+| X (누르는 동안) | 달리기 — 스태미나 소모, 소음으로 좀비가 몰려옴 |
+| C | 행동 — 죄수: 사물함 숨기/나오기 · 교도관: 문 잠금/해제 |
+
+## 파일 구조
+```
+index.html, css/style.css
+js/env.js          Supabase URL / anon key (.env 역할)
+js/config.js       밸런스 수치(난이도 단계, 속도, 스태미나, 쿨다운…)
+js/endings.js      엔딩 데이터(컷, 자막, 대체 컷) + 엔딩 도감(localStorage)
+js/map.js          감옥 맵(ASCII) · 충돌 · 시야 · 경로탐색
+js/zombies.js      좀비 AI (방장 클라이언트에서만 실행)
+js/net.js          Supabase Auth/RPC/Realtime(Broadcast·Presence)
+js/scenes/         Boot / Game / Ending 씬
+assets/img/        Higgsfield로 생성한 실사 스프라이트·초상화·엔딩 컷
+supabase/schema.sql
+```
+
+## 개발용 디버그 URL (Supabase 없이 확인)
+- `?autostart=local` — 한 화면 테스트(P1 방향키 / P2 WASD+Shift+R+F+E)
+- `&debugTime=400` — 경과 시간을 건너뛰어 난이도 '상' 확인 · `&nofog=1` 안개 끔 · `&follow=1` 온라인 시점
+- `?ending=escape&reason=zombie` / `?ending=last_shift&reason=time` — 엔딩 컷신 미리보기

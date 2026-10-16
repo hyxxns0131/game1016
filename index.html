@@ -33,11 +33,14 @@
         <div id="join-hint" class="hint hidden"></div>
         <button id="btn-join" class="btn btn-primary hidden">방 입장하기</button>
         <button id="btn-create" class="btn btn-primary">방 만들기 (온라인 1:1)</button>
+        <div class="or"><span>또는 함께할 사람이 없다면</span></div>
+        <button id="btn-solo" class="btn">혼자 하기 — AI 교도관과 대결 (죄수로 플레이)</button>
         <div id="online-warn" class="warn hidden">
-          Supabase가 설정되지 않아 온라인 대전을 쓸 수 없습니다.<br />
+          Supabase가 설정되지 않아 온라인 대전을 쓸 수 없습니다. (혼자 하기는 가능)<br />
           <code>js/env.js</code>에 URL과 anon key를 넣어주세요.
         </div>
         <div id="lobby-error" class="error hidden"></div>
+        <button id="btn-howto" class="btn btn-ghost">📖 게임 방법</button>
       </div>
 
       <div id="lobby-wait" class="card hidden">
@@ -52,10 +55,91 @@
       </div>
 
       <div class="controls-help">
-        <b>조작</b> 방향키 이동 · <b>Space</b> 점프 · <b>Z</b> 앉기 · <b>X</b> 달리기 · <b>C</b> 행동(숨기/문 잠그기)<br />
+        <b>조작</b> 방향키·마우스 클릭 이동 · <b>Space</b> 점프 · <b>Z</b> 앉기 · <b>X</b> 달리기 · <b>C</b> 행동(숨기/문 잠그기) · <b>M</b> 지도<br />
         <b>방법</b> 방을 만들고 초대 링크를 친구에게 보내면 1:1 대전이 시작됩니다
       </div>
     </div>
+  </section>
+
+  <!-- 게임 방법 -->
+  <section id="howto" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="howto-title">
+    <div class="modal-card">
+      <button id="btn-howto-close" class="modal-x" aria-label="닫기">✕</button>
+      <h2 id="howto-title">게임 방법</h2>
+      <p class="howto-lead">좀비로 가득 찬 교도소. 한 명은 <b class="c-pr">죄수</b>가 되어 탈출하고, 한 명은 <b class="c-gd">교도관</b>이 되어 막는다. 둘 다 좀비에게 잡히면 즉시 패배.</p>
+
+      <div class="howto-roles">
+        <div class="howto-role">
+          <img src="assets/img/portrait_prisoner.jpg" alt="" />
+          <div>
+            <h3 class="c-pr">죄수</h3>
+            <p><b>목표</b> 맵에 흩어진 <b>열쇠 조각 3개</b>를 모아 운동장 동쪽 <b>정문</b>으로 탈출</p>
+            <ul>
+              <li><b>C</b> 사물함에 숨기 — 최대 10초, 교도관·좀비에게 안 보임</li>
+              <li>교도관에게 잡히면 감방으로 끌려가고 열쇠 1개를 떨어뜨림</li>
+              <li>지도에 남은 열쇠 위치가 노란 점으로 표시됨</li>
+            </ul>
+          </div>
+        </div>
+        <div class="howto-role">
+          <img src="assets/img/portrait_guard.jpg" alt="" />
+          <div>
+            <h3 class="c-gd">교도관</h3>
+            <p><b>목표</b> <b>10분</b> 동안 죄수의 탈출을 막기</p>
+            <ul>
+              <li><b>C</b> 문 잠그기 — 동시에 3개까지, 25초 뒤 자동 해제</li>
+              <li>넓은 손전등 시야 (단, 멀리서도 불빛이 보임)</li>
+              <li>죄수와 부딪히면 체포 → 죄수를 감방으로 돌려보냄</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <h3>조작</h3>
+      <div class="howto-keys">
+        <div><kbd>←↑↓→</kbd> 이동</div>
+        <div><kbd>마우스 클릭</kbd> 그 지점으로 이동 (누른 채 끌면 따라감)</div>
+        <div><kbd>X</kbd> 달리기 — 빠르지만 스태미나 소모, 소음 발생</div>
+        <div><kbd>Space</kbd> 점프 — 탁자·침대 넘기, 공중에선 잡히지 않음</div>
+        <div><kbd>Z</kbd> 앉기 — 느리지만 조용함, 좀비·교도관에게 잘 안 보임</div>
+        <div><kbd>C</kbd> 행동 — 숨기 / 문 잠그기</div>
+        <div><kbd>M</kbd> 지도 열기/닫기 (오른쪽 위)</div>
+      </div>
+
+      <h3>좀비</h3>
+      <p>하수구·환풍구에서 기어 나온다. 가까운 사람을 보면 쫓아오고, <b>달리기·문 여닫기·착지 소리</b>에 몰려든다. 시간이 지날수록 강해진다.</p>
+      <div class="howto-phases">
+        <div><b>하</b> 0~3분<br>적고 느림</div>
+        <div><b class="c-p1">중</b> 3~6분<br>늘어나고 무리 지음</div>
+        <div><b class="c-p2">상</b> 6분~<br>빠르고, 문을 부수는 거대 좀비</div>
+      </div>
+
+      <h3>승리 조건</h3>
+      <ul>
+        <li>죄수가 정문으로 탈출 → <b class="c-pr">죄수 승리</b></li>
+        <li>10분이 지남 → <b class="c-gd">교도관 승리</b></li>
+        <li>좀비에게 잡힘 / 연결이 끊김 → 상대 승리</li>
+      </ul>
+
+      <h3>플레이 방법</h3>
+      <ul>
+        <li><b>온라인 1:1</b> — 방 만들기 → 초대 링크를 친구에게 보내기. 역할은 서버가 랜덤 배정</li>
+        <li><b>혼자 하기</b> — 내가 죄수, AI 교도관과 대결</li>
+      </ul>
+      <p class="howto-tip">💡 팁: 어둠 속에선 앉아서 움직이고, 좀비가 몰려오면 점프로 탁자를 넘어 따돌리세요.</p>
+    </div>
+  </section>
+
+  <!-- 스토리 인트로 -->
+  <section id="intro" class="intro hidden">
+    <div class="intro-stage">
+      <img id="intro-img" alt="" />
+      <video id="intro-video" muted playsinline preload="auto"></video>
+      <div id="intro-tag" class="intro-tag"></div>
+    </div>
+    <div class="intro-sub"><p id="intro-text"></p></div>
+    <div class="intro-progress"><i id="intro-bar"></i></div>
+    <button id="btn-intro-skip" class="btn btn-small intro-skip">건너뛰기 ▶▶</button>
   </section>
 
   <!-- 역할 공개 -->
@@ -80,6 +164,13 @@
       <div class="hud-box hud-phase" id="hud-phase-box"><div class="hud-k">감염 단계</div><div id="hud-phase">하</div></div>
     </div>
     <div class="hud-left" id="hud-left"></div>
+    <div class="minimap-wrap">
+      <button id="btn-map" class="btn btn-small map-toggle">🗺 지도 <kbd>M</kbd></button>
+      <div id="minimap" class="minimap">
+        <canvas id="minimap-canvas"></canvas>
+        <div class="minimap-zone" id="minimap-zone"></div>
+      </div>
+    </div>
     <div id="hud-banner" class="hud-banner hidden"></div>
     <div id="hud-hint" class="hud-hint hidden"></div>
     <div id="hud-msg" class="hud-msg"></div>

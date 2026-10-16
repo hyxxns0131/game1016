@@ -171,3 +171,22 @@ export class LocalNet extends Emitter {
     return this.state();
   }
 }
+
+/** 혼자 하기: 나는 죄수, 상대는 AI 교도관. 서버 없이 브라우저 안에서만 돈다. */
+export class SoloNet extends LocalNet {
+  constructor(nickname) {
+    super();
+    this.mode = 'solo';
+    this.players = [
+      { user_id: 'p1', nickname: nickname || '생존자', role: null },
+      { user_id: 'ai', nickname: 'AI 교도관', role: null },
+    ];
+  }
+
+  async assignRoles() {
+    const st = await super.assignRoles();
+    this.players[0].role = 'prisoner';
+    this.players[1].role = 'guard';
+    return this.state();
+  }
+}

@@ -2,8 +2,9 @@ import { TILE, GAME, PLAYER, PRISONER, GUARD, PHASES, ZOMBIE } from '../config.j
 import { GameMap, mulberry32, hashString } from '../map.js';
 import { buildMapTexture } from '../render.js';
 import { ZombieSim, lerpAngle } from '../zombies.js';
+import { GuardAI } from '../guardAI.js';
 import { sfx } from '../audio.js';
-import { hud } from '../ui.js';
+import { hud, minimap } from '../ui.js';
 
 // 방향키 이동 · Space 점프 · Z 앉기 · X 달리기 · C 행동
 const CONTROLS = {
@@ -53,6 +54,7 @@ export class GameScene extends Phaser.Scene {
     this.setupCamera();
 
     hud.setupCards(this.players.filter((p) => p.local), net.mode);
+    minimap.setup(this.map);
     hud.show();
     sfx.startAmbient();
 
@@ -106,6 +108,7 @@ export class GameScene extends Phaser.Scene {
       const { img, shadow } = this.makeCharacter(role, SPRITE_H[role]);
       return {
         role, userId: u.user_id, nickname: u.nickname, local,
+        ai: net.mode === 'solo' && role === 'guard',
         slot: net.mode === 'local' ? (idx === 0 ? 'p1' : 'p2') : 'online',
         controls: net.mode === 'local' && idx === 1 ? CONTROLS.p2 : CONTROLS.online,
         x: spawn.x, y: spawn.y, tx: spawn.x, ty: spawn.y, angle: role === 'prisoner' ? Math.PI / 2 : -Math.PI / 2,
@@ -119,6 +122,7 @@ export class GameScene extends Phaser.Scene {
     this.prisoner = this.players[0];
     this.guard = this.players[1];
     this.me = net.mode === 'local' ? null : this.players.find((p) => p.local);
+    this.guardAI = this.guard.ai ? new GuardAI(this, this.guard) : null;
   }
 
   setupZombies() {
@@ -137,7 +141,7 @@ export class GameScene extends Phaser.Scene {
     this.dark = this.add.renderTexture(0, 0, this.map.pw, this.map.ph).setOrigin(0).setDepth(50);
     this.lightG = this.make.graphics({ x: 0, y: 0 }, false);
     // 비상등(붉은 점멸)
-    const lampSpots = [[12, 6], [33, 16], [10, 21], [30, 23], [40, 23], [56, 17], [33, 2], [5, 30]];
+    const lampSpots = [[12, 7], [35, 16], [10, 26], [31, 26], [43, 27], [60, 19], [35, 2], [5, 33], [22, 12]];
     this.lamps = lampSpots.map(([tx, ty], i) => {
       const c = this.map.center(tx, ty);
       const g = this.add.image(c.x, c.y, 'glow').setTint(0xff2a10).setBlendMode('ADD').setDepth(55).setScale(1.6).setAlpha(0.25);
@@ -154,11 +158,72 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(60);
   }
 
+  /** 클릭한 지점까지 경로를 따라가는 방향(도착하면 null) */
+  clickDir(p, dt) {
+    const t = p.moveTarget, m = this.map;
+    const dx = t.x - p.x, dy = t.y - p.y, dist = Math.hypot(dx, dy);
+    if (dist < 8) return null;
+    // 제자리에 막혀 있으면 취소
+    t.stuck = Math.hypot(p.x - (t.lx ?? p.x + 99), p.y - (t.ly ?? 0)) < 0.3 ? (t.stuck || 0) + dt : 0;
+    t.lx = p.x; t.ly = p.y;
+    if (t.stuck > 0.6) return null;
+    if (dist < 160 && m.los(p.x, p.y, t.x, t.y)) return { x: dx / dist, y: dy / dist };
+    const tx = m.tileOf(p.x), ty = m.tileOf(p.y);
+    const f = t.field, cur = f[ty * m.w + tx];
+    if (cur <= 0) return { x: dx / dist, y: dy / dist };
+    let best = null, bv = cur;
+    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const v = f[(ty + oy) * m.w + (tx + ox)];
+      if (v >= 0 && v < bv) { bv = v; best = m.center(tx + ox, ty + oy); }
+    }
+    if (!best) return { x: dx / dist, y: dy / dist };
+    const bx = best.x - p.x, by = best.y - p.y, bl = Math.hypot(bx, by) || 1;
+    return { x: bx / bl, y: by / bl };
+  }
+
+  setMoveTarget(wx, wy) {
+    const p = this.me || this.players.find((q) => q.local && q.slot !== 'p2');
+    if (!p || this.over) return;
+    const m = this.map;
+    let tx = m.tileOf(wx), ty = m.tileOf(wy);
+    // 벽을 찍으면 가장 가까운 바닥으로
+    if (m.blocked(tx, ty, p.role)) {
+      let best = null, bd = Infinity;
+      for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) {
+        if (m.blocked(tx + ox, ty + oy, p.role)) continue;
+        const d = ox * ox + oy * oy;
+        if (d < bd) { bd = d; best = [tx + ox, ty + oy]; }
+      }
+      if (!best) return;
+      [tx, ty] = best;
+      const c = m.center(tx, ty); wx = c.x; wy = c.y;
+    }
+    const key = tx + ',' + ty;
+    const field = p.moveTarget && p.moveTarget.key === key ? p.moveTarget.field : m.bfs(tx, ty, p.role);
+    p.moveTarget = { x: wx, y: wy, key, field };
+    this.clickMark.setPosition(wx, wy).setAlpha(0.9).setScale(0.25);
+    this.tweens.add({ targets: this.clickMark, alpha: 0, scale: 0.12, duration: 500 });
+  }
+
   setupInput() {
+    this.clickMark = this.add.image(0, 0, 'glow').setTint(0xffd27a).setAlpha(0).setDepth(70).setBlendMode('ADD');
+    const onPointer = (ptr) => {
+      if (!ptr.isDown) return;
+      const wp = this.cameras.main.getWorldPoint(ptr.x, ptr.y);
+      this.setMoveTarget(wp.x, wp.y);
+    };
+    this.input.on('pointerdown', onPointer);
+    // 누른 채 끌면 계속 따라간다(너무 자주 경로 계산하지 않게 0.15초 간격)
+    let lastDrag = 0;
+    this.input.on('pointermove', (ptr) => {
+      if (ptr.isDown && performance.now() - lastDrag > 150) { lastDrag = performance.now(); onPointer(ptr); }
+    });
+
     this.down = new Set();
     this.pressed = new Set();
     const kd = (e) => {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      if (e.code === 'KeyM') minimap.toggle();
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
     };
@@ -220,7 +285,7 @@ export class GameScene extends Phaser.Scene {
         cam.setZoom(Math.min(w / this.map.pw, h / this.map.ph));
         cam.centerOn(this.map.pw / 2, this.map.ph / 2);
       } else {
-        cam.setZoom(Phaser.Math.Clamp(Math.min(w / 980, h / 640), 0.8, 1.8));
+        cam.setZoom(Phaser.Math.Clamp(Math.min(w / 680, h / 440), 1.3, 2.6));
       }
     };
     fit();
@@ -255,7 +320,8 @@ export class GameScene extends Phaser.Scene {
     const phase = PHASES[this.phaseIdx];
 
     for (const p of this.players) {
-      if (p.local && !frozen) this.updateLocal(p, dt);
+      if (p.ai) { if (!frozen) this.guardAI.update(dt); }
+      else if (p.local && !frozen) this.updateLocal(p, dt);
       else if (!p.local) this.updateRemote(p, dt);
     }
 
@@ -278,6 +344,7 @@ export class GameScene extends Phaser.Scene {
     if (this.hudT <= 0) {
       this.hudT = 0.1;
       hud.update({ remaining, phase, phaseIdx: this.phaseIdx, players: this.players.filter((p) => p.local), scene: this });
+      minimap.draw(this);
     }
   }
 
@@ -303,6 +370,12 @@ export class GameScene extends Phaser.Scene {
     if (this.isDown(p, 'right')) mx += 1;
     if (this.isDown(p, 'up')) my -= 1;
     if (this.isDown(p, 'down')) my += 1;
+    // 마우스 클릭 이동: 방향키를 누르면 취소
+    if (mx || my) p.moveTarget = null;
+    else if (p.moveTarget) {
+      const d = this.clickDir(p, dt);
+      if (d) { mx = d.x; my = d.y; } else p.moveTarget = null;
+    }
     const moving = mx !== 0 || my !== 0;
     p.jumpCd = Math.max(0, p.jumpCd - dt);
     const airborne = p.airT > 0;
@@ -349,7 +422,7 @@ export class GameScene extends Phaser.Scene {
 
     // 달리기 소음
     p.noiseT -= dt;
-    if (p.running && p.noiseT <= 0) { p.noiseT = 0.5; this.makeNoise(p.x, p.y, PLAYER.runNoiseRadius); }
+    if (p.running && p.noiseT <= 0) { p.noiseT = 0.5; this.makeNoise(p.x, p.y, PLAYER.runNoiseRadius, p); }
 
     if (this.isPressed(p, 'act') && p.airT <= 0) this.action(p);
   }
@@ -370,7 +443,7 @@ export class GameScene extends Phaser.Scene {
     }
     p.airT = 0;
     p.airExt = 0;
-    this.makeNoise(p.x, p.y, PLAYER.landNoiseRadius);
+    this.makeNoise(p.x, p.y, PLAYER.landNoiseRadius, p);
     sfx.noise({ dur: 0.15, freq: 250, vol: 0.3 });
   }
 
@@ -380,7 +453,8 @@ export class GameScene extends Phaser.Scene {
     p.y += (p.ty - p.y) * k;
   }
 
-  makeNoise(x, y, r) {
+  makeNoise(x, y, r, src) {
+    if (this.guardAI && src !== this.guard) this.guardAI.hear(x, y, r);
     if (this.sim) this.sim.noise(x, y, r, PHASES[this.phaseIdx]);
     else this.net.send('noise', { x: Math.round(x), y: Math.round(y), r });
   }
@@ -426,14 +500,24 @@ export class GameScene extends Phaser.Scene {
       const lockedCount = this.map.doors.filter((x) => x.locked).length;
       if (lockedCount >= GUARD.maxLocks) { this.toast(`동시에 ${GUARD.maxLocks}개까지만 잠글 수 있다`, p); return; }
       if (p.lockCd > 0) { this.toast(`잠금 장치 재충전 중 (${Math.ceil(p.lockCd)}초)`, p); return; }
-      const occupied = [this.prisoner, ...this.zombiePositions()].some((e) =>
-        d.tiles.some((t) => Math.abs(e.x - (t.tx * TILE + 16)) < 22 && Math.abs(e.y - (t.ty * TILE + 16)) < 22));
-      if (occupied) { this.toast('문 사이에 무언가 있다', p); return; }
-      d.locked = true;
-      p.lockCd = GUARD.lockCooldown;
-      sfx.lock();
-      this.net.send('door', { id: d.id, locked: true });
+      if (this.doorOccupied(d)) { this.toast('문 사이에 무언가 있다', p); return; }
+      this.lockDoor(p, d);
     }
+  }
+
+  doorOccupied(d) {
+    return [this.prisoner, ...this.zombiePositions()].some((e) =>
+      d.tiles.some((t) => Math.abs(e.x - (t.tx * TILE + 16)) < 22 && Math.abs(e.y - (t.ty * TILE + 16)) < 22));
+  }
+
+  lockDoor(p, d) {
+    d.locked = true;
+    d.lockedAt = performance.now() / 1000;
+    p.lockCd = GUARD.lockCooldown;
+    const near = this.me ? Math.hypot(this.me.x - d.x, this.me.y - d.y) : 0;
+    sfx.lock(near < 500 ? 1 : 0.3);
+    if (p.ai && near < 400) this.toast('🔒 AI 교도관이 문을 잠갔다');
+    this.net.send('door', { id: d.id, locked: true });
   }
 
   unhide(p) {
@@ -476,6 +560,7 @@ export class GameScene extends Phaser.Scene {
     p.tx = p.x; p.ty = p.y;
     sfx.arrest();
     this.cameras.main.flash(400, 120, 140, 255);
+    if (this.guardAI) { this.guardAI.mode = 'patrol'; this.guardAI.target = null; }
     this.toast(`🚨 체포됐다! 감방으로 이송${dropped ? ' · 열쇠 조각 1개를 떨어뜨렸다' : ''}`);
     this.applyKeys(this.keysState());
     this.net.send('keys', this.keysState());
@@ -514,18 +599,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     // 체포 (교도관 측 권한)
-    if (gd.local && gd.arrestCd <= 0 && !pr.hidden && pr.airT <= 0) {
+    if ((gd.local || gd.ai) && gd.arrestCd <= 0 && !pr.hidden && pr.airT <= 0) {
       const d = Math.hypot(pr.x - gd.x, pr.y - gd.y);
       if (d < GUARD.arrestRange) {
         gd.arrestCd = PRISONER.arrestImmunity + 0.5;
-        if (this.net.mode === 'local') this.onArrested();
+        if (this.net.mode !== 'online') this.onArrested();
         else { this.net.send('arrest', {}); sfx.arrest(); this.toast('🚨 체포 성공! 죄수를 감방으로 돌려보냈다', gd); }
       }
     }
 
     // 좀비에게 잡힘 (각자 자기 캐릭터만 판정)
     for (const p of this.players) {
-      if (!p.local || p.hidden || p.dead || p.airT > 0) continue; // 공중에선 잡히지 않는다
+      if (!(p.local || p.ai) || p.hidden || p.dead || p.airT > 0) continue; // 공중에선 잡히지 않는다
       for (const z of this.zombiePositions()) {
         if (z.state === 0) continue;
         const r = z.type ? ZOMBIE.bruteCatchDist : ZOMBIE.catchDist;
@@ -549,22 +634,29 @@ export class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- 문
   updateDoors(dt) {
-    const ents = [...this.players.filter((p) => !p.hidden).map((p) => ({ x: p.x, y: p.y, kind: p.role, local: p.local, crouching: p.crouching })),
+    const ents = [...this.players.filter((p) => !p.hidden).map((p) => ({ x: p.x, y: p.y, kind: p.role, local: p.local || p.ai, crouching: p.crouching, ref: p })),
       ...this.zombiePositions().map((z) => ({ x: z.x, y: z.y, kind: z.type ? 'brute' : 'zombie' }))];
+    const lockAuthority = this.guard.local || this.guard.ai;
+    const now = performance.now() / 1000;
     for (const d of this.map.doors) {
-      let want = false, localOpener = false;
+      // 잠금 자동 해제(교도관 측 권한)
+      if (lockAuthority && d.locked && !d.broken && d.lockedAt && now - d.lockedAt > GUARD.lockDuration) {
+        d.locked = false;
+        this.net.send('door', { id: d.id, locked: false });
+      }
+      let want = false, localOpener = null;
       if (d.broken) want = true;
       else {
         for (const e of ents) {
           if (Math.hypot(e.x - d.x, e.y - d.y) < 46 && (!d.locked || e.kind === 'guard')) {
             want = true;
-            if (e.local && !e.crouching) localOpener = true; // 앉아서 지나가면 조용하다
+            if (e.local && !e.crouching) localOpener = e.ref; // 앉아서 지나가면 조용하다
           }
         }
       }
       if (want && !d.isOpen) {
         d.isOpen = true;
-        if (localOpener) { this.makeNoise(d.x, d.y, PLAYER.doorNoiseRadius); sfx.door(0.35); }
+        if (localOpener) { this.makeNoise(d.x, d.y, PLAYER.doorNoiseRadius, localOpener); if (localOpener.local) sfx.door(0.35); }
       } else if (!want && d.isOpen) {
         d.isOpen = false;
       }

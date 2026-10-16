@@ -127,7 +127,7 @@ class Sfx {
     this.tone({ freq: 110, to: 55, dur: 0.25, type: 'square', vol: vol * 0.25, pan });
   }
   slam() { this.noise({ dur: 0.6, freq: 200, vol: 0.8 }); this.tone({ freq: 80, to: 30, dur: 0.5, type: 'sine', vol: 0.6 }); }
-  lock() { this.tone({ freq: 1400, dur: 0.05, type: 'square', vol: 0.15 }); setTimeout(() => this.tone({ freq: 900, dur: 0.08, type: 'square', vol: 0.15 }), 70); }
+  lock(v = 1) { this.tone({ freq: 1400, dur: 0.05, type: 'square', vol: 0.15 * v }); setTimeout(() => this.tone({ freq: 900, dur: 0.08, type: 'square', vol: 0.15 * v }), 70); }
   pickup() { this.tone({ freq: 880, to: 1760, dur: 0.25, type: 'triangle', vol: 0.3 }); setTimeout(() => this.tone({ freq: 1320, dur: 0.4, type: 'sine', vol: 0.2 }), 90); }
   beep() { this.tone({ freq: 660, dur: 0.12, type: 'square', vol: 0.12 }); }
   go() { this.tone({ freq: 220, to: 110, dur: 0.8, type: 'sawtooth', vol: 0.3 }); this.noise({ dur: 0.8, freq: 600, vol: 0.4 }); }

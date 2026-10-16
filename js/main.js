@@ -1,11 +1,12 @@
-import { OnlineNet, LocalNet, onlineAvailable } from './net.js';
+import { OnlineNet, LocalNet, SoloNet, onlineAvailable } from './net.js';
 import { GAME } from './config.js';
 import { BootScene } from './scenes/BootScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { EndingScene } from './scenes/EndingScene.js';
-import { ENDINGS, getEnding, getSeenEndings, markEndingSeen } from './endings.js';
+import { ENDINGS, getEnding, pickEnding, getSeenEndings, markEndingSeen } from './endings.js';
 import { $, showScreen, toast } from './ui.js';
 import { sfx } from './audio.js';
+import { playIntro } from './intro.js';
 
 const ROLE_KO = { prisoner: '죄수', guard: '교도관' };
 const params = new URLSearchParams(location.search);
@@ -25,6 +26,7 @@ const game = new Phaser.Game({
   scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight },
   render: { antialias: true },
 });
+if (params.has('autostart')) window.__game = game; // 개발/테스트용
 game.scene.add('Game', GameScene);
 game.scene.add('Ending', EndingScene);
 game.scene.add('Boot', BootScene, true, {
@@ -57,7 +59,7 @@ function showError(msg) {
 }
 
 function setBusy(b) {
-  ['btn-create', 'btn-join'].forEach((id) => ($(id).disabled = b));
+  ['btn-create', 'btn-join', 'btn-solo'].forEach((id) => ($(id).disabled = b));
 }
 
 function showLobby() {
@@ -93,10 +95,16 @@ function showWaiting() {
   $('wait-text').textContent = '상대 생존자를 기다리는 중…';
 }
 
+/** 게임 시작 전 스토리 인트로 (개발용 autostart에선 생략) */
+function intro() {
+  return params.has('autostart') ? Promise.resolve() : playIntro();
+}
+
 async function createRoom() {
   const nick = getNick();
   if (!nick) return;
   setBusy(true); showError('');
+  await intro();
   try {
     net = new OnlineNet();
     await net.init();
@@ -118,6 +126,7 @@ async function joinRoom() {
   if (!nick) return;
   const code = roomCodeFromUrl();
   setBusy(true); showError('');
+  await intro();
   try {
     net = new OnlineNet();
     await net.init();
@@ -167,6 +176,20 @@ function startPolling() {
   }, 2000);
 }
 function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
+
+async function startSolo() {
+  sfx.ensure();
+  let nick = $('nickname').value.trim();
+  if (nick) { try { localStorage.setItem('zpb_nick', nick); } catch { /* 무시 */ } }
+  if ($('btn-solo').disabled) return;
+  setBusy(true);
+  await intro();
+  net = new SoloNet(nick);
+  await net.assignRoles();
+  const skip = Number(params.get('debugTime') || 0);
+  if (skip) net.room.started_at = new Date(Date.parse(net.room.started_at) - skip * 1000).toISOString();
+  startMatch();
+}
 
 async function startLocal() {
   sfx.ensure();
@@ -238,17 +261,23 @@ function startMatch() {
 }
 
 // ---------------------------------------------------------------- 엔딩 → 결과
+/** 이 화면을 보고 있는 사람(온라인: 나, 혼자 하기/로컬: P1) 기준 */
+function viewer(state) {
+  const myId = net.mode === 'online' ? net.uid : net.me.user_id;
+  const me = state.players.find((p) => p.user_id === myId);
+  return { me, iWon: state.room.winner_id === myId };
+}
+
 async function onGameOver(state) {
   game.scene.stop('Game');
   showScreen(null);
   const room = state.room;
-  const ending = room.ending && room.end_reason !== 'disconnect' ? getEnding(room.ending) : null;
+  const { me, iWon } = viewer(state);
+  // 엔딩은 '내' 역할과 승패로 고른다 → 졌으면 LOSE 엔딩
+  const ending = room.end_reason !== 'disconnect' && me ? pickEnding(me.role, iWon) : null;
   if (!ending) { showResult(state); return; }
 
-  const winner = state.players.find((p) => p.user_id === room.winner_id);
-  const header = net.mode === 'local'
-    ? { text: `${ROLE_KO[winner.role]} 승리`, cls: 'win' }
-    : room.winner_id === net.uid ? { text: '승리', cls: 'win' } : { text: '패배', cls: 'lose' };
+  const header = iWon ? { text: '승리 · WIN', cls: 'win' } : { text: '패배 · LOSE', cls: 'lose' };
   markEndingSeen(ending.id);
   await document.fonts.ready;
   game.scene.start('Ending', {
@@ -259,12 +288,13 @@ async function onGameOver(state) {
 
 function reasonText(state) {
   const room = state.room;
+  const { me, iWon } = viewer(state);
   const loser = state.players.find((p) => p.user_id !== room.winner_id);
   switch (room.end_reason) {
-    case 'escape': return '죄수가 열쇠 조각 3개로 정문을 열고 탈출했다.';
-    case 'time': return '10분을 버텼다. 교대 시간이 되었다.';
-    case 'zombie': return `${loser?.nickname ?? '상대'}(${ROLE_KO[loser?.role] ?? ''})이(가) 좀비에게 잡혔다.`;
-    case 'disconnect': return '상대의 연결이 끊어졌다.';
+    case 'escape': return iWon ? '열쇠 조각 3개로 정문을 열고 탈출했다!' : '죄수가 정문을 열고 탈출해버렸다.';
+    case 'time': return iWon ? '10분을 버텼다. 교대 시간이다.' : '시간이 다 됐다. 정문은 끝내 열리지 않았다.';
+    case 'zombie': return loser?.user_id === me?.user_id ? '좀비에게 물렸다…' : `${loser?.nickname ?? '상대'}(${ROLE_KO[loser?.role] ?? ''})이(가) 좀비에게 잡혔다.`;
+    case 'disconnect': return iWon ? '상대의 연결이 끊어졌다.' : '연결이 끊어졌다.';
     default: return '';
   }
 }
@@ -281,25 +311,18 @@ function renderDex() {
     if (open) d.style.backgroundImage = `url(assets/img/${e.thumb}.jpg)`;
     const cap = document.createElement('div');
     cap.className = 'cap';
-    cap.textContent = open ? `「${e.title}」 — ${ROLE_KO[e.winnerRole]} 승리` : '??? — 아직 보지 못한 엔딩';
+    cap.textContent = open ? `「${e.title}」 — ${ROLE_KO[e.role]} ${e.win ? '승리' : '패배'}` : '??? — 아직 보지 못한 엔딩';
     d.appendChild(cap);
     list.appendChild(d);
   });
 }
 
 function showResult(state) {
-  const room = state.room;
-  const winner = state.players.find((p) => p.user_id === room.winner_id);
+  const { me, iWon } = viewer(state);
   const mine = $('result-mine');
-  if (net.mode === 'local') {
-    mine.textContent = `${ROLE_KO[winner.role]} 승리`;
-    mine.className = 'result-mine win';
-  } else {
-    const won = room.winner_id === net.uid;
-    mine.textContent = won ? '승리' : '패배';
-    mine.className = `result-mine ${won ? 'win' : 'lose'}`;
-  }
-  $('result-title').textContent = winner ? `${winner.nickname} (${ROLE_KO[winner.role]}) 승리` : '';
+  mine.textContent = iWon ? 'WIN' : 'LOSE';
+  mine.className = `result-mine ${iWon ? 'win' : 'lose'}`;
+  $('result-title').textContent = me ? `${ROLE_KO[me.role]} ${me.nickname} — ${iWon ? '승리' : '패배'}` : '';
   $('result-reason').textContent = reasonText(state);
   renderDex();
   showScreen('screen-result');
@@ -310,7 +333,7 @@ function showResult(state) {
 
 function updateAgainButton() {
   const btn = $('btn-again');
-  if (net.mode === 'local') { btn.disabled = false; return; }
+  if (net.mode !== 'online') { btn.disabled = false; $('result-wait').textContent = ''; return; }
   const ok = net.opponentOnline();
   btn.disabled = !ok;
   $('result-wait').textContent = ok ? '둘 중 누구든 "다시 하기"를 누르면 같은 방에서 역할을 다시 뽑습니다.' : '상대가 방을 나갔습니다.';
@@ -339,6 +362,12 @@ async function toLobby() {
 // ---------------------------------------------------------------- 바인딩
 $('btn-create').addEventListener('click', createRoom);
 $('btn-join').addEventListener('click', joinRoom);
+$('btn-solo').addEventListener('click', startSolo);
+const howto = (open) => $('howto').classList.toggle('hidden', !open);
+$('btn-howto').addEventListener('click', () => howto(true));
+$('btn-howto-close').addEventListener('click', () => howto(false));
+$('howto').addEventListener('click', (e) => { if (e.target.id === 'howto') howto(false); });
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') howto(false); });
 $('btn-again').addEventListener('click', again);
 $('btn-lobby').addEventListener('click', toLobby);
 $('btn-leave').addEventListener('click', toLobby);
@@ -347,7 +376,7 @@ $('btn-copy').addEventListener('click', async () => {
   catch { $('invite-link').select(); document.execCommand('copy'); toast('초대 링크를 복사했습니다'); }
 });
 $('nickname').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && onlineAvailable) (roomCodeFromUrl() ? joinRoom : createRoom)();
+  if (e.key === 'Enter') (!onlineAvailable ? startSolo : roomCodeFromUrl() ? joinRoom : createRoom)();
 });
 window.addEventListener('hashchange', () => { if (!net) showLobby(); });
 
@@ -355,13 +384,16 @@ showLobby();
 
 // 개발/테스트용: ?autostart=local 로 바로 로컬 대전, ?ending=escape&reason=zombie 로 엔딩 미리보기
 if (params.get('autostart') === 'local') startLocal();
+if (params.get('autostart') === 'solo') startSolo();
 if (params.get('ending')) {
   pendingStart = null;
   const run = () => {
     net = new LocalNet();
     net.players[0].role = 'prisoner'; net.players[1].role = 'guard';
     const ending = getEnding(params.get('ending'));
-    const winnerRole = ending.winnerRole;
+    // P1(죄수) 시점: 엔딩의 역할이 죄수면 P1이 승패 주체
+    const winnerRole = ending.win ? ending.role : (ending.role === 'prisoner' ? 'guard' : 'prisoner');
+    if (ending.role === 'guard') { net.players[0].role = 'guard'; net.players[1].role = 'prisoner'; }
     const winner = net.players.find((p) => p.role === winnerRole);
     onGameOver({ room: { ...net.room, status: 'finished', ending: ending.id, end_reason: params.get('reason') || 'escape', winner_id: winner.user_id }, players: net.players });
   };

@@ -1,5 +1,6 @@
 // 엔딩 데이터. 새 엔딩은 여기에 항목만 추가하면 된다.
-// - id: end_game 함수가 기록하는 rooms.ending 값과 같다.
+// 엔딩은 '보는 사람' 기준으로 고른다: role(내 역할) + win(내가 이겼는지).
+// (end_game 함수가 기록하는 rooms.ending 은 승자 기준 escape / last_shift 로 그대로 남는다.)
 // - cuts[].variants[end_reason]: 해당 종료 사유일 때 대체 컷(이미지/자막)
 // - lines: 한 줄씩 타이핑되는 자막. 비어 있으면 그림만 보여준다.
 
@@ -7,7 +8,8 @@ export const ENDINGS = [
   {
     id: 'escape',
     title: '새벽의 탈주',
-    winnerRole: 'prisoner',
+    role: 'prisoner',
+    win: true,
     thumb: 'endA3',
     cuts: [
       {
@@ -43,7 +45,8 @@ export const ENDINGS = [
   {
     id: 'last_shift',
     title: '마지막 근무',
-    winnerRole: 'guard',
+    role: 'guard',
+    win: true,
     thumb: 'endB2',
     cuts: [
       {
@@ -76,7 +79,76 @@ export const ENDINGS = [
     ],
     final: 'THE END — 근무는 끝났다. 하지만 죄책감은 끝나지 않는다.',
   },
+  {
+    id: 'life_sentence',
+    title: '끝나지 않는 형기',
+    role: 'prisoner',
+    win: false,
+    thumb: 'loseP2',
+    cuts: [
+      {
+        img: 'loseP1',
+        caption: '06:00. 감방 철창을 붙잡은 채 사이렌을 듣는다.',
+        lines: ['06:00. 사이렌이 울린다.', '정문은… 끝내 열리지 않았다.'],
+        variants: {
+          zombie: {
+            img: 'loseP1_alt',
+            caption: '떨어진 손전등 불빛 속으로 다가오는 발소리.',
+            lines: ['어둠 속에서…', '무언가가 내 발목을 잡았다.'],
+          },
+        },
+      },
+      {
+        img: 'loseP2',
+        caption: '철창 창문 너머로 멀어지는 구조 헬기.',
+        lines: ['멀어지는 헬기 소리.', '나를 위한 자리는 없었다.'],
+      },
+      {
+        img: 'loseP3',
+        caption: '감방 벽의 날짜 표시와 끝내 맞추지 못한 열쇠 조각.',
+        lines: ['열쇠 조각은… 끝내 셋이 되지 못했다.'],
+      },
+    ],
+    final: 'GAME OVER — 형기는 아직 끝나지 않았다.',
+  },
+  {
+    id: 'abandoned_post',
+    title: '버려진 초소',
+    role: 'guard',
+    win: false,
+    thumb: 'loseG1',
+    cuts: [
+      {
+        img: 'loseG1',
+        caption: '활짝 열린 정문. 안개 속으로 사라지는 주황색 등.',
+        lines: ['문이… 열려 있었다.', '놈은 이미 안개 너머로 사라졌다.'],
+        variants: {
+          zombie: {
+            img: 'loseG1_alt',
+            caption: '경비실 바닥에 떨어진 손전등과 모자. 깜빡이는 모니터.',
+            lines: ['무전기 너머로…', '대답은 없었다.'],
+          },
+        },
+      },
+      {
+        img: 'loseG2',
+        caption: '지직거리는 감시 모니터. 창밖으로 떠나는 헬기.',
+        lines: ['구조 헬기는 기다려주지 않았다.'],
+      },
+      {
+        img: 'loseG3',
+        caption: '잿더미 위에 떨어진 교도관 배지.',
+        lines: ['…교대자는 오지 않는다.'],
+      },
+    ],
+    final: 'GAME OVER — 마지막 근무자는 돌아오지 못했다.',
+  },
 ];
+
+/** 보는 사람 기준 엔딩: 내 역할 + 승패 */
+export function pickEnding(myRole, iWon) {
+  return ENDINGS.find((e) => e.role === myRole && e.win === iWon) || null;
+}
 
 export function getEnding(id) {
   return ENDINGS.find((e) => e.id === id) || null;

@@ -46,7 +46,16 @@ export const PRISONER = {
 export const GUARD = {
   maxLocks: 3,
   lockCooldown: 6,         // 문 잠근 뒤 다음 잠금까지(초)
+  lockDuration: 25,        // 잠긴 문이 자동으로 풀리기까지(초) — 운동장 문 3개를 영구 봉쇄하지 못하게
   arrestRange: 28,
+};
+
+// 혼자 하기 모드의 AI 교도관
+export const AI_GUARD = {
+  speedMul: 0.92,          // 플레이어 속도 대비
+  hearingMul: 1.2,         // 소음 반경 배율
+  memory: 0.8,             // 시야에서 놓친 뒤 추격을 유지하는 시간(초)
+  zombieAvoid: 150,        // 이 거리 안의 좀비를 피한다
 };
 
 // 난이도 단계. from = 경과 시간(초)

@@ -35,11 +35,11 @@ export function buildMapTexture(scene, map, key = 'map') {
     ctx.fillStyle = color;
     ctx.fillRect(x1 * TILE, y1 * TILE, (x2 - x1 + 1) * TILE, (y2 - y1 + 1) * TILE);
   };
-  tint(1, 1, 22, 13, 'rgba(40,30,20,0.25)');
-  tint(24, 1, 42, 14, 'rgba(30,40,35,0.22)');
-  tint(24, 22, 36, 34, 'rgba(20,30,50,0.25)');
-  tint(1, 20, 20, 34, 'rgba(30,45,50,0.25)');
-  tint(44, 1, 58, 34, 'rgba(30,20,10,0.25)');
+  tint(1, 1, 23, 14, 'rgba(40,30,20,0.25)');
+  tint(25, 1, 45, 17, 'rgba(30,40,35,0.22)');
+  tint(25, 21, 38, 38, 'rgba(20,30,50,0.25)');
+  tint(1, 21, 21, 38, 'rgba(30,45,50,0.25)');
+  tint(47, 1, 62, 38, 'rgba(30,20,10,0.25)');
 
   // 바닥 타일 줄눈(실내)
   ctx.strokeStyle = 'rgba(0,0,0,0.22)';
@@ -145,7 +145,7 @@ export function buildMapTexture(scene, map, key = 'map') {
   // 철조망(운동장 바깥 벽 위)
   ctx.strokeStyle = 'rgba(160,160,160,0.5)'; ctx.lineWidth = 1;
   each((x, y, c) => {
-    if (c !== '#' || x < 43) return;
+    if (c !== '#' || x < 46) return;
     if (y === 0 || y === map.h - 1 || x === map.w - 1) {
       for (let k = 0; k < 4; k++) {
         ctx.beginPath();
@@ -200,16 +200,16 @@ export function buildMapTexture(scene, map, key = 'map') {
     ctx.fillText(text, 0, 0);
     ctx.restore();
   };
-  stencil('C-BLOCK', 11, 7.4, 26, 'rgba(220,200,150,0.18)');
-  stencil('MESS HALL', 33.5, 14.2, 28, 'rgba(220,200,150,0.16)');
-  stencil('YARD', 51, 22, 52, 'rgba(240,230,200,0.10)');
-  stencil('GUARD', 30.5, 23.5, 26, 'rgba(150,180,230,0.2)');
-  stencil('LAUNDRY', 10.5, 25.5, 24, 'rgba(200,220,220,0.15)');
-  stencil('EXIT →', 56, 15.6, 22, 'rgba(240,200,60,0.45)');
-  stencil('THEY ARE INSIDE', 33, 11.4, 22, 'rgba(150,10,8,0.55)', -0.06);
-  stencil('HELP US', 6, 15, 28, 'rgba(140,10,8,0.5)', 0.05);
-  stencil('DON\'T RUN', 30, 33.6, 18, 'rgba(150,10,8,0.5)');
-  stencil('DAY 47', 53, 30, 30, 'rgba(160,15,10,0.45)', -0.12);
+  stencil('C-BLOCK', 12, 7.6, 28, 'rgba(220,200,150,0.18)');
+  stencil('MESS HALL', 35.5, 15.4, 30, 'rgba(220,200,150,0.16)');
+  stencil('YARD', 55, 23, 56, 'rgba(240,230,200,0.10)');
+  stencil('GUARD', 31.5, 26.5, 28, 'rgba(150,180,230,0.2)');
+  stencil('LAUNDRY', 11, 28.5, 26, 'rgba(200,220,220,0.15)');
+  stencil('EXIT →', 60, 17.6, 22, 'rgba(240,200,60,0.45)');
+  stencil('THEY ARE INSIDE', 36, 11.4, 24, 'rgba(150,10,8,0.55)', -0.06);
+  stencil('HELP US', 7, 19.6, 30, 'rgba(140,10,8,0.5)', 0.05);
+  stencil("DON'T RUN", 31, 37.6, 18, 'rgba(150,10,8,0.5)');
+  stencil('DAY 47', 56, 33, 32, 'rgba(160,15,10,0.45)', -0.12);
 
   scene.textures.addCanvas(key, cv);
   return key;
